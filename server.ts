@@ -19,21 +19,42 @@ async function startServer() {
   // In-memory storage
   const messages: any[] = [];
   const onlineUsers = new Map<string, { id: string; name: string }>();
+  const userRegistry = new Map<string, string>(); // userId -> name mapping
 
   // Socket.io Logic
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
-    socket.on("join", ({ name }) => {
-      const userId = uuidv4();
-      const user = { id: userId, name };
+    socket.on("join", ({ name, id }) => {
+      let userId = id;
+      let userName = name;
+
+      // If ID is provided, try to recover name from registry
+      if (userId && userRegistry.has(userId)) {
+        userName = userRegistry.get(userId);
+      } else if (!userId) {
+        // New user
+        userId = uuidv4();
+      }
+
+      // If we have a name (either passed or recovered), register it
+      if (userName) {
+        userRegistry.set(userId, userName);
+      } else {
+        // If we still don't have a name, we can't join properly
+        socket.emit("error", { message: "User name required for new IDs" });
+        return;
+      }
+
+      const user = { id: userId, name: userName };
       
-      // Store user
+      // Store user as online
       onlineUsers.set(socket.id, user);
 
-      // Send initial state (last 50 messages and current online users)
+      // Send initial state
       socket.emit("init", { 
         userId, 
+        userName,
         messages: messages.slice(-50), 
         users: Array.from(onlineUsers.values()) 
       });
@@ -42,7 +63,7 @@ async function startServer() {
       const statusMsg = {
         id: uuidv4(),
         type: "status",
-        content: `${name} joined the chat`,
+        content: `${userName} joined the chat`,
         timestamp: Date.now(),
       };
       

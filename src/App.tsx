@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { Send, User, Users, LogOut, MessageSquare, Hash } from "lucide-react";
+import { Send, User, Users, LogOut, MessageSquare, Hash, Copy, Check, Key } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface Message {
@@ -17,14 +17,19 @@ interface UserInfo {
   name: string;
 }
 
+const STORAGE_KEY = "live_chat_user_v1";
+
 export default function App() {
   const [name, setName] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [isJoined, setIsJoined] = useState(false);
   const [userId, setUserId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<UserInfo[]>([]);
   const [input, setInput] = useState("");
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [joinMode, setJoinMode] = useState<"new" | "id">("new");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -35,17 +40,38 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
+  // Check local storage on mount
   useEffect(() => {
-    if (isJoined && name) {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const { id, name: savedName } = JSON.parse(saved);
+        if (id && savedName) {
+          setName(savedName);
+          setUserId(id);
+          setIsJoined(true);
+        }
+      } catch (e) {
+        console.error("Failed to parse saved user", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isJoined && (name || userId)) {
       const newSocket = io();
       setSocket(newSocket);
 
-      newSocket.emit("join", { name });
+      newSocket.emit("join", { name, id: userId });
 
-      newSocket.on("init", ({ userId, messages, users }) => {
-        setUserId(userId);
+      newSocket.on("init", ({ userId: serverId, userName: serverName, messages, users }) => {
+        setUserId(serverId);
+        setName(serverName);
         setMessages(messages);
         setOnlineUsers(users);
+        
+        // Save to local storage
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: serverId, name: serverName }));
       });
 
       newSocket.on("new_message", (message: Message) => {
@@ -64,15 +90,24 @@ export default function App() {
         setMessages((prev) => [...prev, message]);
       });
 
+      newSocket.on("error", (err) => {
+        alert(err.message);
+        setIsJoined(false);
+        localStorage.removeItem(STORAGE_KEY);
+      });
+
       return () => {
         newSocket.disconnect();
       };
     }
-  }, [isJoined, name]);
+  }, [isJoined]);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim()) {
+    if (joinMode === "new" && name.trim()) {
+      setIsJoined(true);
+    } else if (joinMode === "id" && loginId.trim()) {
+      setUserId(loginId.trim());
       setIsJoined(true);
     }
   };
@@ -89,6 +124,17 @@ export default function App() {
     }
   };
 
+  const copyId = () => {
+    navigator.clipboard.writeText(userId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.reload();
+  };
+
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 font-sans text-white">
@@ -102,29 +148,66 @@ export default function App() {
               <MessageSquare className="text-emerald-500 w-8 h-8" />
             </div>
             <h1 className="text-3xl font-bold tracking-tight mb-2">Live Chat</h1>
-            <p className="text-white/50 text-center">Enter your name to join the public chat room</p>
+            <p className="text-white/50 text-center">Join the public conversation</p>
+          </div>
+
+          <div className="flex bg-white/5 p-1 rounded-xl mb-6">
+            <button 
+              onClick={() => setJoinMode("new")}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${joinMode === "new" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/60"}`}
+            >
+              New User
+            </button>
+            <button 
+              onClick={() => setJoinMode("id")}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${joinMode === "id" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/60"}`}
+            >
+              Login with ID
+            </button>
           </div>
 
           <form onSubmit={handleJoin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-white/40 mb-2 ml-1">
-                Display Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Alex"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500/50 transition-colors text-white placeholder:text-white/20"
-                autoFocus
-              />
-            </div>
+            {joinMode === "new" ? (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-white/40 mb-2 ml-1">
+                  Display Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Alex"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:border-emerald-500/50 transition-colors text-white placeholder:text-white/20"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-white/40 mb-2 ml-1">
+                  Unique User ID
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <input
+                    type="text"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
+                    placeholder="Paste your ID here"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:border-emerald-500/50 transition-colors text-white placeholder:text-white/20"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
             <button
               type="submit"
-              disabled={!name.trim()}
+              disabled={joinMode === "new" ? !name.trim() : !loginId.trim()}
               className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
             >
-              Join Chat
+              {joinMode === "new" ? "Join Chat" : "Login"}
             </button>
           </form>
         </motion.div>
@@ -152,13 +235,26 @@ export default function App() {
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10">
-            <User className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs font-medium">{name}</span>
+          <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10">
+            <div className="flex flex-col items-end">
+              <span className="text-xs font-bold">{name}</span>
+              <button 
+                onClick={copyId}
+                className="text-[9px] text-white/40 hover:text-emerald-500 flex items-center gap-1 transition-colors"
+                title="Click to copy ID"
+              >
+                {copied ? <Check className="w-2 h-2" /> : <Copy className="w-2 h-2" />}
+                {copied ? "Copied!" : userId.slice(0, 8) + "..."}
+              </button>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+              <User className="w-4 h-4 text-emerald-500" />
+            </div>
           </div>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={handleLogout}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors text-white/60 hover:text-white"
+            title="Logout"
           >
             <LogOut className="w-5 h-5" />
           </button>
@@ -251,11 +347,31 @@ export default function App() {
                   <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-[#0f0f0f] rounded-full"></div>
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-medium truncate">{u.name}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium truncate">{u.name}</span>
+                    {u.id === userId && <span className="text-[8px] bg-emerald-500/10 text-emerald-500 px-1 rounded border border-emerald-500/20">YOU</span>}
+                  </div>
                   <span className="text-[9px] text-white/20 uppercase tracking-tighter">Active</span>
                 </div>
               </div>
             ))}
+          </div>
+          
+          {/* User Info Card at bottom of sidebar */}
+          <div className="p-4 mt-auto border-t border-white/10 bg-white/5">
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] uppercase tracking-widest font-bold text-white/30">Your Unique ID</span>
+              <div className="flex items-center justify-between bg-black/40 rounded-lg p-2 border border-white/5">
+                <code className="text-[10px] text-emerald-500/70 font-mono truncate mr-2">{userId}</code>
+                <button 
+                  onClick={copyId}
+                  className="p-1.5 hover:bg-white/10 rounded transition-colors"
+                  title="Copy ID"
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-white/40" />}
+                </button>
+              </div>
+            </div>
           </div>
         </aside>
       </main>
