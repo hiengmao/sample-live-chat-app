@@ -1,0 +1,5 @@
+{
+  "name": "Live Redis Chat",
+  "description": "A real-time public chat application with Redis-backed storage and presence tracking.",
+  "requestFramePermissions": []
+}
