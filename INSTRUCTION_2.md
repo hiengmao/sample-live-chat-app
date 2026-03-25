@@ -33,8 +33,8 @@ Example:
 # 🔑 Step 4: Check Docker Image on Docker Hub
 Go to [https://hub.docker.com/repositories/](https://hub.docker.com/repositories) to see your docker image you have been pushed.
 
-# 🔑 Step 5: Screenshoot Your Docker Hub
-1. Screenshot your docker hub page that contains docker image you have pushed.
+# 🔑 Step 5: Screenshoot/Provide Link Your Docker Hub
+1. Screenshot/copy link your docker hub page that contains docker image you have pushed.
 2. Submit the screenshot to assignment
 
 >> Score: 10 points
