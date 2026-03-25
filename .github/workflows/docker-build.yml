@@ -2,14 +2,13 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "main", "feat/workflow" ]
+    branches: [ main, feat/workflow ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
 
-  build:
-
+  docker-build:
     runs-on: ubuntu-latest
 
     steps:
